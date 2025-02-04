@@ -28,12 +28,13 @@ validator spacetime(
   min_asteria_distance: Int,
 ) {
   // SPACETIME VALIDATOR:
-  spend(
+  spend( //script purpose - check Aiken Docs
     datum: Option<ShipDatum>,
     redeemer: ShipRedeemer,
     utxo: OutputReference,
     self: Transaction,
-  ) {
+  ) 
+  {
     let Transaction { inputs, outputs, mint, validity_range, .. } = self
     expect Some(datum) = datum
     let ShipDatum {
@@ -43,7 +44,7 @@ validator spacetime(
       pilot_token_name,
       last_move_latest_time,
     } = datum
-
+    //what's goin on here?
     expect Some(max_speed_rational) =
       rational.new(max_speed.distance, max_speed.time)
     expect Some(ship_input) = find_input(inputs, utxo)
@@ -270,16 +271,20 @@ validator spacetime(
     }
   }
 
-  // SHIPYARD POLICY:
-  mint(redeemer: ShipyardRedeemer, shipyard_policy: PolicyId, self: Transaction) {
+  // SHIPYARD POLICY: 
+  mint ( // mint script purpose
+   redeemer: ShipyardRedeemer, 
+    shipyard_policy: PolicyId, 
+    self: Transaction,) 
+   {
+    //validation logic
     let Transaction { inputs, outputs, mint, validity_range, .. } = self
     let minted_value = mint
-
     let fuel_policy = pellet_validator_address
 
     when redeemer is {
       MintShip -> {
-        expect Some(asteria_input) =
+        expect Some(asteria_input) = // checks for the correct script address
           list.find(
             inputs,
             fn(input) {
@@ -290,21 +295,24 @@ validator spacetime(
               }
             },
           )
-        let must_be_valid_asteria =
+        let must_be_valid_asteria = // checks if have the admin token
           quantity_of(
             asteria_input.output.value,
             admin_token.policy,
             admin_token.name,
           ) > 0
+        //validates the Datum
         expect InlineDatum(asteria_datum) = asteria_input.output.datum
         expect asteria_datum: AsteriaDatum = asteria_datum
-
+        //Finds the ship state UTXO
         expect [ship_state] =
           transaction.find_script_outputs(outputs, shipyard_policy)
+        //Extract and Validate Ship Datum
         expect InlineDatum(ship_datum) = ship_state.datum
         expect ship_datum: ShipDatum = ship_datum
+        //Capture the Latest Transaction Time
         expect Finite(tx_latest_time) = validity_range.upper_bound.bound_type
-
+        //Generate Ship and Pilot Token Names
         let ship_token_name =
           bytearray.concat(
             "SHIP",
@@ -315,25 +323,31 @@ validator spacetime(
             "PILOT",
             bytearray.from_string(string.from_int(asteria_datum.ship_counter)),
           )
+          //Define Expected Minted Assets
         let expected_minted_value =
           from_asset(shipyard_policy, ship_token_name, 1)
             |> add(shipyard_policy, pilot_token_name, 1)
             |> add(fuel_policy, "FUEL", initial_fuel)
 
+        // Check if Minted Assets Match Expectations
         let must_mint_expected_value = minted_value == expected_minted_value
+        // Enforce Minimum Distance Between Ships
         let must_respect_min_distance =
           utils.distance(ship_datum.pos_x, ship_datum.pos_y) >= min_asteria_distance
+        // Verify Ship & Pilot Token Names in Datum
         let must_have_ship_name = ship_datum.ship_token_name == ship_token_name
-        let must_have_pilot_name =
-          ship_datum.pilot_token_name == pilot_token_name
-        let must_have_latest_time =
-          ship_datum.last_move_latest_time == tx_latest_time
+        let must_have_pilot_name = ship_datum.pilot_token_name == pilot_token_name
+        // Validate the Latest Move Time
+        let must_have_latest_time = ship_datum.last_move_latest_time == tx_latest_time
+        // Ensure Ship Token is in the Shipyard
         let must_hold_ship_token =
           quantity_of(ship_state.value, shipyard_policy, ship_token_name) == 1
+        // Ensure Fuel Token is Held
         let must_hold_initial_fuel =
           quantity_of(ship_state.value, fuel_policy, "FUEL") == initial_fuel
+        // Ensure Shipyard Holds Exactly 3 Assets (ship, pilot, fuel)
         let must_hold_3_assets = list.length(ship_state.value |> flatten) == 3
-
+        // Final Validation Check
         and {
           must_be_valid_asteria?,
           must_mint_expected_value?,
